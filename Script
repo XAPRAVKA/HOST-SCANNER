@@ -1,0 +1,59 @@
+import argparse
+from scapy.all import IP, ICMP, ARP, TCP, UDP, sr1, Ether, srp
+
+
+def icmp_scan(target):
+    ans = sr1(IP(dst=target)/ICMP(), timeout=1, verbose=0)
+    if ans:  
+        return f"Host {target} is up (ICMP response received)"
+    return None  
+
+def arp_scan(target_ip):
+    arp_request = ARP(pdst=target_ip)
+    broadcast = Ether(dst="ff:ff:ff:ff:ff:ff")
+    arp_request_broadcast = broadcast/arp_request
+    answered_list = srp(arp_request_broadcast, timeout=1, verbose=False)[0]
+    active_hosts = []
+    for element in answered_list:
+        active_hosts.append(f"Host {element[1].psrc} is up (ARP response received)") 
+    return active_hosts
+def udp_scan(target_ip, target_port=53):
+    """UDP sorğusu göndərir və cavab alıb-almadığını yoxlayır."""
+    udp_request = IP(dst=target_ip)/UDP(dport=target_port)
+    ans = sr1(udp_request, timeout=1, verbose=0)
+    if ans:
+        return f"Host {target_ip} is up (UDP response received)"
+    return None
+def tcp_scan(target_ip, target_port=80):
+    """TCP SYN sorğusu göndərir və cavab alıb-almadığını yoxlayır."""
+    tcp_syn = IP(dst=target_ip)/TCP(dport=target_port, flags="S")
+    ans = sr1(tcp_syn, timeout=1, verbose=0)
+    if ans and ans.haslayer(TCP) and ans.getlayer(TCP).flags == 0x12:  # SYN-ACK
+        return f"Host {target_ip} is up (TCP SYN-ACK response received)"
+    return None
+parser = argparse.ArgumentParser(description="Network Scanner")
+parser.add_argument("-t", "--target", required=True, help="Target IP or subnet (e.g., 192.168.1.1 or 192.168.1.0/24)")
+parser.add_argument("-s", "--scan-type", required=True, choices=['icmp', 'arp', 'tcp', 'udp'], help="Type of scan to perform")
+args = parser.parse_args()
+target_ip = args.target
+scan_type = args.scan_type
+if "/" in target_ip:
+    from ipaddress import ip_network
+    targets = [str(ip) for ip in ip_network(target_ip, strict=False).hosts()]
+else:
+    targets = [target_ip]
+if scan_type == 'icmp':
+    scan_func = icmp_scan
+elif scan_type == 'arp':
+    scan_func = arp_scan
+elif scan_type == 'tcp':
+    scan_func = tcp_scan
+elif scan_type == 'udp':
+    scan_func = udp_scan
+for target in targets:
+    result = scan_func(target)
+    if result:  
+        print(result)
+from scapy.all import conf
+conf.verb = 0 
+
